@@ -1,0 +1,45 @@
+{% load static %}
+
+
+<!doctype html>
+
+<html lang="en">
+
+<head>
+    {% include 'layout.html' %}
+
+    {% block head %} {% endblock %}
+
+    <title> {% block title %} {% endblock %} </title>
+</head>
+
+<body>
+    <div class="page">
+
+        {% include 'head.html' %}
+
+        <div class="page-wrapper">
+            <div class="page-body">
+                <div class="container-xl">
+                    {% block body %} {% endblock %}
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+
+</body>
+
+
+
+
+
+
+
+
+{% block script %} {% endblock %}
+
+
+</html>

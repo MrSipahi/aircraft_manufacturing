@@ -1,0 +1,288 @@
+{% extends 'base.html' %}
+
+{% block title %} Parça Listeleme {% endblock %}
+
+
+{% block body %}
+<div class="container">
+    <h1>Parça Listesi</h1>
+    
+    <div class="mb-3">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modal-part-create"> 
+            Yeni Parça Oluştur
+        </button>
+    </div>
+
+    
+    <table class="table" id="part-table">
+        <thead>
+            <tr>
+                <th>Parça Adı</th>
+                <th>Parça Tipi</th>
+                <th>Uçak Tipi</th>
+                <th>Status</th>
+                <th>Oluşturan</th>
+                <th>Oluşturulma Tarihi</th>
+                <th>İşlem</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+{% comment %} Parça Ekleme Modalı {% endcomment %}
+<div class="modal modal-blur fade" id="modal-part-create" tabindex="-1" aria-hidden="true" style="display: none;">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Parça Oluştur</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body">
+                <form id="create-part-form">
+                    <div class="mb-3">
+                        <label class="form-label">Parça</label>
+                        <input type="text" class="form-control" value="{{part_type}}" readonly disabled>
+                        <input type="hidden" class="form-control" name="type" value="{{part_type.id}}" >
+
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Parça Adı</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Uçak</label>
+                        <select class="form-select" name="aircraft_type" required>
+                            {% for aircraft in aircrafts %}
+                                <option value="{{ aircraft.id }}">{{ aircraft.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <a href="#" class="btn btn-link link-secondary" data-bs-dismiss="modal">
+                    İptal
+                </a>
+                <a href="#" class="btn btn-primary ms-auto" id="create-part-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+                        <path d="M12 5l0 14"></path>
+                        <path d="M5 12l14 0"></path>
+                    </svg>
+                    Parçayı oluştur
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block script %}
+<script>
+    $(document).ready(function() {
+
+        // DataTable işlemleri, server side istek atılan alan
+        $('#part-table').DataTable({
+            processing: true,
+            serverSide: true,
+            ajax: {
+                url: '{% url "part" %}',  
+                type: 'GET', 
+                contentType: 'application/json',
+                data: function(d) {
+                    return {
+                        search_value: d.search.value,
+                        draw: d.draw,  
+                        start: d.start,
+                        length: d.length,
+                        order_column: d.order[0].column,
+                        order_dir: d.order[0].dir
+                    };
+                }
+            },
+            "searching": true,
+            columns: [
+                { data: 'name' },
+                { data: 'type.name' },
+                { data: 'aircraft_type.name' },
+                { data: 'status' },
+                { data: 'created_by' },
+                { data: 'created_at' },
+                {
+                    data: null, 
+                    orderable: false, 
+                    searchable: false, 
+                    render: function (data, type, row) {
+                        
+                        return `<button class="btn btn-danger delete-button" data-id="${row.id}">Geri dönüşüme yolla</button>`;
+                    }
+                }
+
+            ],
+            language: {
+                search: "Ara:",
+                lengthMenu: "Göster _MENU_ kayıt",
+                info: "_TOTAL_ kayıttan _START_ ile _END_ arasındaki kayıtlar",
+                infoEmpty: "0 kayıt",
+                infoFiltered: "(toplam _MAX_ kayıttan filtrelendi)", 
+                paginate: {
+                    previous: "Önceki", 
+                    next: "Sonraki" 
+                },
+                zeroRecords: "Eşleşen kayıt bulunamadı" 
+            },
+        });
+
+        // Parça oluşturma formu için validasyon, form submit işlemi
+        $('#create-part-form').validate({
+            errorClass: 'is-invalid',
+            validClass: 'is-valid',
+            rules: {
+                "name": {
+                    required: true,
+                    minlength: 3
+                },
+                "aircraft_type": {
+                    required: true
+                }
+            },
+            messages: {
+                "name": {
+                    required: 'Lütfen parça adını giriniz.',
+                    minlength: 'Parça adı en az 3 karakter olmalıdır.'
+                },
+                "aircraft_type": {
+                    required: 'Lütfen bir uçak seçiniz.'
+                }
+            },
+            submitHandler: function(form) {
+                const formData = $(form).serialize(); 
+
+                Swal.fire({
+                    title: 'Parça Oluşturulsun mu?',
+                    text: 'Parça adı ve uçak tipini onaylayın.',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Evet',
+                    cancelButtonText: 'Hayır',
+                }).then((result) => {
+                    if (result.isConfirmed) {
+
+                        Swal.fire({
+                            title: 'Lütfen Bekleyiniz...',
+                            text: 'İşlem devam ediyor.',
+                            icon: 'info',
+                            allowOutsideClick: false,  
+                            showConfirmButton: false,
+                            didOpen: () => {
+                                Swal.showLoading();  
+                            }
+                        });
+        
+                        $.ajax({
+                            url: '{% url "part" %}',  
+                            type: 'POST',
+                            data: formData, 
+                            success: function(response) {
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Başarılı',
+                                    text: 'Parça başarıyla oluşturuldu.',
+                                }).then(() => {                                    
+                                    location.reload();
+                                });
+                            },
+                            error: function(response) {
+                                message = 'Bir hata oluştu. Lütfen tekrar deneyin.';
+                                error_response = JSON.parse(response.responseText);
+                                if (error_response.non_field_errors) {
+                                    message = error_response.non_field_errors[0];
+                                }
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Hata',
+                                    text: message,
+                                });
+                            }
+                        });
+                    }
+                });
+            }
+        });
+        
+        // Parça oluşturma butonu
+        $('#create-part-btn').on('click', function(e) {
+            e.preventDefault();
+            $('#create-part-form').submit(); 
+        });
+
+        // Parça silme işlemi
+        $('#part-table').on('click', '.delete-button', function() {
+            var partId = $(this).data('id'); 
+        
+            Swal.fire({
+                title: 'Emin misiniz?',
+                text: "Bu parçayı geri dönüşüme yollamak istiyor musunuz?",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Evet, geri dönüşüme yolla!',
+                cancelButtonText: 'İptal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    
+                    Swal.fire({
+                        title: 'Lütfen Bekleyiniz...',
+                        text: 'Geri dönüşüme gönderiliyor...',
+                        icon: 'info',
+                        allowOutsideClick: false,
+                        showConfirmButton: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+        
+                    
+                    $.ajax({
+                        url: `{% url "part" %}${partId}/`,  
+                        type: 'DELETE',
+                        success: function(response) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Başarılı',
+                                text: 'Parça başarıyla geri dönüşüme yollandı.'
+                            }).then(() => {
+                                $('#part-table').DataTable().ajax.reload(); 
+                            });
+                        },
+                        error: function(response) {
+                            message = 'Bir hata oluştu. Lütfen tekrar deneyin.';
+                            error_response = JSON.parse(response.responseText);
+                            if (error_response.non_field_errors) {
+                                message = error_response.non_field_errors[0];
+                            }
+                            else if (error_response.error) {
+                                message = error_response.error;
+                            }
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Hata!',
+                                text: message
+                            });
+                        }
+                    });
+                }
+            });
+        });
+        
+    });
+</script>
+
+
+{% endblock %}

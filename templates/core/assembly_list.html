@@ -1,0 +1,387 @@
+{% extends 'base.html' %}
+
+{% block title %} Montaj Listeleme {% endblock %}
+
+
+{% block body %}
+<div class="container">
+    <h1>Montaj Listesi</h1>
+    
+    <div class="mb-3">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modal-assembly"> 
+            Yeni Montaj Oluştur
+        </button>
+    </div>
+
+    <table class="table" id="assembly-table">
+        <thead>
+            <tr>
+                <th>Uçak Tipi</th>
+                <th>Montaj Yapan</th>
+                <th>Montaj Tarihi</th>
+                <th>Durum</th>
+                <th>İşlem</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+{% comment %} Montaj Detay Modalı {% endcomment %}
+<div class="modal modal-blur fade" id="modal-assembly" tabindex="-1" aria-hidden="true" style="display: none;">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <form id="create-assembly-form">
+                <div class="modal-header">
+                    <h5 class="modal-title">Montaj Oluştur</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+                </div>
+                <div class="modal-body">
+                    
+                        <div class="mb-3">
+                            <label class="form-label">Uçak Tipi</label>
+                            <select class="form-select" name="aircraft_type" id="aircraft-select" required>
+                                <option value="">Seçiniz...</option>
+                                {% for aircraft in aircraft_types %}
+                                    <option value="{{ aircraft.id }}">{{ aircraft.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div id="parts-section" style="display: none;">
+                            <h2 class="mb-3">Gerekli Parçalar</h6>
+                            <div id="part-requirements">
+                                
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Montaj Notları</label>
+                            <textarea class="form-control" name="notes" rows="3"></textarea>
+                        </div>
+                    
+                </div>
+                <div class="modal-footer">
+                    <a href="#" class="btn btn-link link-secondary" data-bs-dismiss="modal">
+                        İptal
+                    </a>
+                    <button type="submit" href="#" class="btn btn-primary ms-auto" id="create-assembly-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+                            <path d="M12 5l0 14"></path>
+                            <path d="M5 12l14 0"></path>
+                        </svg>
+                        Montajı Tamamla
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block script %}
+<script>
+    $(document).ready(function() {
+        // DataTable işlemleri, server side istek atılan alan
+        const assemblyTable = $('#assembly-table').DataTable({
+            processing: true,
+            serverSide: true,
+            ajax: {
+                url: '{% url "assembly" %}',
+                type: 'GET',
+                contentType: 'application/json',
+                data: function(d) {
+                    return {
+                        search_value: d.search.value,
+                        draw: d.draw,
+                        start: d.start,
+                        length: d.length,
+                        order_column: d.order[0].column,
+                        order_dir: d.order[0].dir
+                    };
+                }
+            },
+            searching: true,
+            columns: [
+                { data: 'aircraft_type.name' },
+                { data: 'assembled_by' },
+                { data: 'assembled_at' },
+                { 
+                    data: 'is_complete',
+                    render: function(data) {
+                        return data ? 
+                            '<span class="badge bg-success">Tamamlandı</span>' : 
+                            '<span class="badge bg-warning">Devam Ediyor</span>';
+                    }
+                },
+                {
+                    data: null,
+                    orderable: false,
+                    searchable: false,
+                    render: function (data, type, row) {
+                        let buttons = `<button class="btn btn-info btn-sm view-button" data-id="${row.id}">Detay</button>`;
+                        if (!row.is_complete) {
+                            buttons += ` <button class="btn btn-danger btn-sm delete-button" data-id="${row.id}">İptal Et</button>`;
+                        }
+                        return buttons;
+                    }
+                }
+            ],
+            language: {
+                search: "Ara:",
+                lengthMenu: "Göster _MENU_ kayıt",
+                info: "_TOTAL_ kayıttan _START_ ile _END_ arasındaki kayıtlar",
+                infoEmpty: "0 kayıt",
+                infoFiltered: "(toplam _MAX_ kayıttan filtrelendi)",
+                paginate: {
+                    previous: "Önceki",
+                    next: "Sonraki"
+                },
+                zeroRecords: "Eşleşen kayıt bulunamadı"
+            }
+        });
+    
+        // Uçak seçimi değiştiğinde parça gereksinimlerini yükleyen alan
+        $('#aircraft-select').change(function() {
+            const aircraftId = $(this).val();
+            if (!aircraftId) {
+                $('#parts-section').hide();
+                return;
+            }
+    
+            $.ajax({
+                url: `{% url 'aircraft_requirements' aircraft_id=1 %}`.replace('1', aircraftId),
+                type: 'GET',
+                success: function(requirements) {
+                    renderPartRequirements(requirements, aircraftId);
+                    $('#parts-section').show();
+                },
+                error: handleAjaxError
+            });
+        });
+    
+        // Montaj oluşturma formu submit edildiğinde
+        $('#create-assembly-form').on('submit', function(e) {
+            e.preventDefault();
+            if (!validatePartSelections()) return;
+    
+            $.ajax({
+                url: '{% url "assembly" %}',
+                type: 'POST',
+                data: $(this).serialize(),
+                success: function() {
+                    showSuccessMessage('Montaj başarıyla oluşturuldu', () => location.reload());
+                },
+                error: handleAjaxError
+            });
+        });
+    
+        // Montaj iptal etme işlemi
+        $('#assembly-table').on('click', '.delete-button', function() {
+            const assemblyId = $(this).data('id');
+            
+            Swal.fire({
+                title: 'Emin misiniz?',
+                text: "Bu montaj işlemi iptal edilecek ve parçalar tekrar kullanılabilir hale gelecek.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Evet, iptal et!',
+                cancelButtonText: 'Vazgeç'
+            }).then((result) => {
+                if (!result.isConfirmed) return;
+    
+                $.ajax({
+                    url: `{% url "assembly" %}${assemblyId}/`,
+                    type: 'DELETE',
+                    success: function() {
+                        showSuccessMessage('Montaj başarıyla iptal edildi', () => assemblyTable.ajax.reload());
+                    },
+                    error: handleAjaxError
+                });
+            });
+        });
+    
+        // Montaj detaylarını gösteren alan
+        $('#assembly-table').on('click', '.view-button', function() {
+            const assemblyId = $(this).data('id');
+            
+            $.ajax({
+                url: `{% url "assembly" %}${assemblyId}/`,
+                type: 'GET',
+                success: function(assembly) {
+                    showAssemblyDetails(assembly);
+                },
+                error: handleAjaxError
+            });
+        });
+    
+        // Montaj oluşturmada parça gereksinimlerini yükleyen fonksiyon
+        function renderPartRequirements(requirements, aircraftId) {
+            let html = '';
+            requirements.forEach(req => {
+                html += generatePartRequirementHtml(req);
+            });
+            $('#part-requirements').html(html);
+            
+            $('.part-select').each(function() {
+                initializePartSelect($(this), aircraftId);
+            });
+        }
+        
+        // Gerekli parça seçim alanlarını oluşturan fonksiyon
+        function generatePartRequirementHtml(requirement) {
+            return `
+                <div class="mb-3">
+                    <label class="form-label">${requirement.part_type.name} (${requirement.quantity} adet gerekli)</label>
+                    <select class="form-select part-select" 
+                            name="parts" 
+                            multiple 
+                            required 
+                            data-required="${requirement.quantity}"
+                            data-type="${requirement.part_type.id}">
+                    </select>
+                    <div class="form-text text-muted">
+                        ${requirement.quantity} adet parça seçmelisiniz
+                    </div>
+                </div>`;
+        }
+        
+        // Select2'yi oluşturan ve parçaları yüklettiren fonksiyon
+        function initializePartSelect(select, aircraftId) {
+            const partTypeId = select.data('type');
+            const requiredCount = select.data('required');
+    
+            select.select2({
+                theme: 'bootstrap-5',
+                width: '50%',
+                placeholder: 'Parçaları seçiniz...',
+                maximumSelectionLength: requiredCount,
+                language: {
+                    maximumSelected: e => `En fazla ${e.maximum} adet parça seçebilirsiniz`,
+                    noResults: () => "Parça bulunamadı",
+                    searching: () => "Aranıyor..."
+                },
+                templateResult: formatPart,
+                templateSelection: formatPartSelection,
+                dropdownParent: $('#modal-assembly')
+            });
+    
+            // Kullanılabilir parçaları yükleyen, select2'ye ekleyen fonksiyon
+            loadAvailableParts(select, aircraftId, partTypeId);
+        }
+        
+        // Kullanılabilir parçaları yükleyen, select2'e tanımlayan fonksiyon
+        function loadAvailableParts(select, aircraftId, partTypeId) {
+            $.ajax({
+                url: `/aircraft/${aircraftId}/part_type/${partTypeId}/available_parts/`,
+                type: 'GET',
+                success: function(parts) {
+                    select.empty();
+                    parts.forEach(part => {
+                        select.append(new Option(part.name, part.id, false, false));
+                    });
+                    select.trigger('change');
+                },
+                error: handleAjaxError
+            });
+        }
+        
+        // Select2 için formatlama fonksiyonları
+        function formatPart(part) {
+            if (!part.id) return part.text;
+            return $(`
+                <div class="d-flex align-items-center py-1">
+                    <div>
+                        <div class="font-weight-bold">${part.text}</div>
+                        <div class="text-muted small">Stokta</div>
+                    </div>
+                </div>
+            `);
+        }
+        
+        // Select2 için formatlama fonksiyonları
+        function formatPartSelection(part) {
+            return part.id ? part.text : part.text;
+        }
+    
+        // Montaj validasyonunu yapan fonksiyon
+        function validatePartSelections() {
+            let isValid = true;
+            
+            $('.part-select').each(function() {
+                const select = $(this);
+                const required = select.data('required');
+                const selected = select.val()?.length || 0;
+                
+                if (selected !== required) {
+                    const partType = select.prev('label').text().split('(')[0].trim();
+                    showErrorMessage(`${partType} için ${required} adet parça seçmelisiniz. Şu an ${selected} adet seçili.`);
+                    isValid = false;
+                    return false;
+                }
+            });
+            
+            return isValid;
+        }
+        
+
+        // Montaj detaylarını gösteren swall'ı açar
+        function showAssemblyDetails(assembly) {
+            const partsHtml = assembly.parts.map(part => 
+                `<li>${part.type.name} - ${part.name}</li>`
+            ).join('');
+    
+            Swal.fire({
+                title: `${assembly.aircraft_type.name} Montaj Detayı`,
+                html: `
+                    <div class="text-left">
+                        <p><strong>Montaj Yapan:</strong> ${assembly.assembled_by}</p>
+                        <p><strong>Montaj Tarihi:</strong> ${assembly.assembled_at}</p>
+                        <p><strong>Durum:</strong> ${assembly.is_complete ? 'Tamamlandı' : 'Devam Ediyor'}</p>
+                        <p><strong>Kullanılan Parçalar:</strong></p>
+                        <ul>${partsHtml}</ul>
+                        ${assembly.notes ? `<p><strong>Notlar:</strong> ${assembly.notes}</p>` : ''}
+                    </div>
+                `,
+                width: '600px'
+            });
+        }
+    
+        function showSuccessMessage(message, callback) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Başarılı',
+                text: message
+            }).then(callback);
+        }
+    
+        function showErrorMessage(message) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Hata',
+                text: message
+            });
+        }
+    
+        function handleAjaxError(response) {
+            let message = 'Bir hata oluştu. Lütfen tekrar deneyin.';
+            try {
+                const error_response = JSON.parse(response.responseText);
+                if (error_response.error) {
+                    message = error_response.error;
+                }
+            } catch (e) {
+                console.error('Error parsing error response:', e);
+            }
+            showErrorMessage(message);
+        }
+    });
+</script>
+{% endblock %}

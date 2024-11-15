@@ -1,0 +1,303 @@
+{% extends 'base.html' %}
+
+
+{% block title %} Kullanıcı Listesi {% endblock %}
+
+{% block body %}
+<div class="container">
+    <h1>Kullanıcı Listesi</h1>
+    
+    <div class="mb-3">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modal-user-form"> 
+            Yeni Kullanıcı Oluştur
+        </button>
+    </div>
+
+    <table class="table" id="user-table">
+        <thead>
+            <tr>
+                <th>Kullanıcı Adı</th>
+                <th>Email</th>
+                <th>Takım</th>
+                <th>Super kullanıcı mı</th>
+                <th>İşlemler</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+            </tr>   
+        </tbody>
+    </table>
+</div>
+
+{% comment %} Kullanıcı Oluşturma Modalı {% endcomment %}
+<div class="modal modal-blur fade" id="modal-user-form" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title user-form-title">Yeni Kullanıcı</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="user-form">
+                    <input type="hidden" name="user_id" id="user_id">
+                    
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Kullanıcı Adı*</label>
+                            <input type="text" class="form-control" name="username" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">E-posta*</label>
+                            <input type="email" class="form-control" name="email" required>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Ad</label>
+                            <input type="text" class="form-control" name="first_name">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Soyad</label>
+                            <input type="text" class="form-control" name="last_name">
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Parola*</label>
+                            <input type="password" class="form-control" name="password" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Parola Tekrar*</label>
+                            <input type="password" class="form-control" name="confirm_password" required>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Takım</label>
+                            <select class="form-select" name="team_id">
+                                <option value="">Takım Seçiniz</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" type="checkbox" name="is_active" checked>
+                                <label class="form-check-label">Aktif</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_superuser">
+                                <label class="form-check-label">Süper Kullanıcı</label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-primary ms-auto" id="save-user-btn">Kaydet</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block script %}
+<script>
+    $(document).ready(function() {
+
+        let isEditMode = false;  
+
+        // DataTable işlemleri, server side istek atılan alan
+        $('#user-table').DataTable({
+            processing: true,
+            serverSide: true,
+            ajax: {
+                url: '{% url "user" %}',  
+                type: 'GET', 
+                contentType: 'application/json',
+                data: function(d) {
+                    return {
+                        search_value: d.search.value,
+                        draw: d.draw,  
+                        start: d.start,
+                        length: d.length,
+                        order_column: d.order[0].column,
+                        order_dir: d.order[0].dir
+                    };
+                }
+            },
+            "searching": true,
+            columns: [
+                { data: 'username' },
+                { data: 'email',orderable: false },
+                { data: 'team.name' },
+                { data: 'is_superuser' },
+                {
+                    data: null, 
+                    orderable: false, 
+                    searchable: false, 
+                    render: function (data, type, row) {
+                        
+                        return `<button class="btn btn-warning edit-user" data-id="${row.id}">Düzenle</button>`;
+                    }
+                }
+
+            ],
+            language: {
+                search: "Ara:",
+                lengthMenu: "Göster _MENU_ kayıt",
+                info: "_TOTAL_ kayıttan _START_ ile _END_ arasındaki kayıtlar",
+                infoEmpty: "0 kayıt",
+                infoFiltered: "(toplam _MAX_ kayıttan filtrelendi)", 
+                paginate: {
+                    previous: "Önceki", 
+                    next: "Sonraki" 
+                },
+                zeroRecords: "Eşleşen kayıt bulunamadı" 
+            },
+        });
+
+        // Düzenleme butonuna tıklanınca
+        $('#user-table').off('click', '.edit-user').on('click', '.edit-user', function() {
+            const userId = $(this).data('id');
+            loadUserForEdit(userId);
+        });
+
+        // Kullanıcı bilgilerini yükleme fonksiyonu
+        function loadUserForEdit(userId) {
+            isEditMode = true;
+            // Önce takımları yükle
+            $.ajax({
+                url: '{% url "teams" %}',
+                type: 'GET',
+                success: function(teams) {
+                    // Sonra kullanıcı bilgilerini yükle
+                    $.ajax({
+                        url: `{% url "user" %}${userId}/`,
+                        type: 'GET',
+                        success: function(user) {
+                            const form = $('#modal-user-form');
+                            form.modal('show');
+
+                            
+        
+                            // Form alanlarını doldur
+                            form.find('input[name="user_id"]').val(user.id);
+                            form.find('input[name="username"]').val(user.username);
+                            form.find('input[name="email"]').val(user.email);
+                            form.find('input[name="first_name"]').val(user.first_name);
+                            form.find('input[name="last_name"]').val(user.last_name);
+                            form.find('input[name="is_active"]').prop('checked', user.is_active);
+                            form.find('input[name="is_superuser"]').prop('checked', user.is_superuser);
+        
+                            // Parola alanlarını opsiyonel yap
+                            form.find('input[name="password"]').val('').prop('required', false);
+                            form.find('input[name="confirm_password"]').val('').prop('required', false);
+                            
+                            // Takım seçeneklerini doldur ve seçili takımı işaretle
+                            const select = form.find('select[name="team_id"]');
+                            select.empty().append('<option value="">Takım Seçiniz</option>');
+
+                            teams.forEach(team => {
+                                const isSelected = user.team && team.id === user.team.id;
+                                select.append(`<option value="${team.id}" ${isSelected ? 'selected' : ''}>${team.name}</option>`);
+                            });
+
+                            // Form başlığını güncelle ve modalı göster
+                            form.find('.user-form-title').text('Kullanıcı Düzenle');
+
+                            
+                        },
+                        error: function(xhr) {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Hata',
+                                text: xhr.responseJSON?.error || 'Kullanıcı bilgileri alınamadı'
+                            });
+                        }
+                    });
+                },
+                error: function() {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Hata',
+                        text: 'Takım listesi alınamadı'
+                    });
+                }
+            });
+        }
+
+        // Kaydet butonuna tıklanınca
+        $('#save-user-btn').click(function() {
+            const form = $('#user-form');
+            const userId = form.find('[name="user_id"]').val();
+            const formData = form.serialize();
+
+            $.ajax({
+                url: userId ? `{% url "user" %}${userId}/` : '{% url "user" %}',
+                type: userId ? 'PUT' : 'POST',
+                data: formData,
+                success: function(response) {
+                    $('#modal-user-form').modal('hide');
+                    
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Başarılı',
+                        text: userId ? 'Kullanıcı güncellendi.' : 'Kullanıcı oluşturuldu.'
+                    });
+                    location.reload();
+                },
+                error: function(xhr) {
+                    let message = 'Bir hata oluştu';
+                    if (xhr.responseJSON) {
+                        if (xhr.responseJSON.error) {
+                            message = typeof xhr.responseJSON.error === 'string' 
+                                ? xhr.responseJSON.error 
+                                : Object.values(xhr.responseJSON.error).flat().join('\n');
+                        }
+                    }
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Hata',
+                        text: message
+                    });
+                }
+            });
+        });
+
+        // Yeni kullanıcı butonu için
+        $('#modal-user-form').on('show.bs.modal', function(e) {
+            if (!isEditMode) {  // Edit modu değilse yeni kullanıcı oluşturma
+                const form = $('#user-form');
+                form[0].reset();
+                form.find('[name="user_id"]').val('');
+                form.find('[name="password"]').prop('required', true);
+                form.find('[name="confirm_password"]').prop('required', true);
+                $('.user-form-title').text('Yeni Kullanıcı');
+                
+                // Takımları yükle
+                $.ajax({
+                    url: '{% url "teams" %}',
+                    type: 'GET',
+                    success: function(teams) {
+                        const select = $('select[name="team_id"]');
+                        select.empty().append('<option value="">Takım Seçiniz</option>');
+                        teams.forEach(team => {
+                            select.append(`<option value="${team.id}">${team.name}</option>`);
+                        });
+                    }
+                });
+            }
+            isEditMode = false;  // Flag'i resetle
+        });
+    
+        
+    });
+</script>
+
+
+{% endblock %}

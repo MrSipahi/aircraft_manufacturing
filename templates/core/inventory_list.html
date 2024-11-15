@@ -1,0 +1,211 @@
+{% extends 'base.html' %}
+
+{% block title %} Envanter Listeleme {% endblock %}
+{% block body %}
+<div class="container">
+    <h1>Envanter Listesi</h1>
+    
+    {% if missing_parts %}
+    <div class="alert alert-warning">
+        <h4>Eksik Parçalar:</h4>
+        {% for aircraft, parts in missing_parts.items %}
+            <p><strong>{{ aircraft }}:</strong>
+            {% for part in parts %}
+                {{ part.part }} ({{ part.quantity }} adet){% if not forloop.last %}, {% endif %}
+            {% endfor %}
+            </p>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <table class="table" id="inventory-table">
+        <thead>
+            <tr>
+                <th>Parça Tipi</th>
+                <th>Uçak Tipi</th>
+                <th>Stok Sayısı</th>
+                <th>Minimum Stok Sayısı</th>
+                <th>Güncellenme Tarihi</th>
+                <th>İşlem</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+{% comment %} Envanter Düzenleme Modalı {% endcomment %}
+<div class="modal modal-blur fade" id="modal-inventory-edit" tabindex="-1" aria-hidden="true" style="display: none;">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Envanter Düzenle</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-inventory-form">
+                    <div class="mb-3">
+                        <label class="form-label">Parça Tipi</label>
+                        <input type="text" class="form-control" name="part_type" readonly disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Uçak Tipi</label>
+                        <input type="text" class="form-control" name="aircraft_type" readonly disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Stok Sayısı</label>
+                        <input type="text" class="form-control" name="quantity" readonly disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Minimum Stok Sayısı</label>
+                        <input type="number" class="form-control" name="minimum_quantity">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <a href="#" class="btn btn-link link-secondary" data-bs-dismiss="modal">
+                    İptal
+                </a>
+                <a href="#" class="btn btn-primary ms-auto" id="update-inventory-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+                        <path d="M12 5l0 14"></path>
+                        <path d="M5 12l14 0"></path>
+                    </svg>
+                    Kaydet
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block script %}
+<script>
+    $(document).ready(function() {
+
+        // DataTable işlemleri, server side istek atılan alan
+        $('#inventory-table').DataTable({
+            processing: true,
+            serverSide: true,
+            ajax: {
+                url: '{% url "inventory" %}',  
+                type: 'GET', 
+                contentType: 'application/json',
+                data: function(d) {
+                    return {
+                        search_value: d.search.value,
+                        draw: d.draw,  
+                        start: d.start,
+                        length: d.length,
+                        order_column: d.order[0].column,
+                        order_dir: d.order[0].dir
+                    };
+                }
+            },
+            "searching": true,
+            columns: [
+                { data: 'part_type.name' },
+                { data: 'aircraft_type.name' },
+                { data: 'quantity' },
+                { data: 'minimum_quantity' },
+                { data: 'updated_at' },
+
+                {
+                    data: null, 
+                    orderable: false, 
+                    searchable: false, 
+                    render: function (data, type, row) {
+                        
+                        return `<button class="btn btn-warning edit-inventory" data-id="${row.id}">Düzenle</button>`;
+                    }
+                }
+
+            ],
+            language: {
+                search: "Ara:",
+                lengthMenu: "Göster _MENU_ kayıt",
+                info: "_TOTAL_ kayıttan _START_ ile _END_ arasındaki kayıtlar",
+                infoEmpty: "0 kayıt",
+                infoFiltered: "(toplam _MAX_ kayıttan filtrelendi)", 
+                paginate: {
+                    previous: "Önceki", 
+                    next: "Sonraki" 
+                },
+                zeroRecords: "Eşleşen kayıt bulunamadı" 
+            },
+        });
+
+        
+        // "Düzenle" butonuna tıklandığında envanter verilerini modal formuna yükleme
+        $('#inventory-table').on('click', '.edit-inventory', function() {
+            const inventoryId = $(this).data('id');
+
+            // Envanter verilerini çekme
+            $.ajax({
+                url: `{% url "inventory" %}${inventoryId}/`,
+                type: 'GET',
+                contentType: 'application/json',
+                success: function(data) {
+                    $('#edit-inventory-form').find('input[name="aircraft_type"]').val(data.aircraft_type.name);
+                    $('#edit-inventory-form').find('input[name="part_type"]').val(data.part_type.name);
+                    $('#edit-inventory-form').find('input[name="quantity"]').val(data.quantity);
+                    $('#edit-inventory-form').find('input[name="minimum_quantity"]').val(data.minimum_quantity);
+                    
+                    $('#modal-inventory-edit').modal('show');
+                    $('#update-inventory-btn').data('id', inventoryId);
+                },
+                error: function() {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Hata',
+                        text: 'Envanter verileri alınamadı, lütfen tekrar deneyin.'
+                    });
+                }
+            });
+        });
+
+        // "Kaydet" butonuna tıklandığında güncelleme işlemini başlatma
+        $('#update-inventory-btn').on('click', function(e) {
+            e.preventDefault();
+
+            const inventoryId = $(this).data('id');
+            const formData = $('#edit-inventory-form').serialize(); 
+
+            // Güncelleme işlemi
+            $.ajax({
+                url: `{% url "inventory" %}${inventoryId}/`,
+                type: 'PATCH',
+                data: formData,
+                success: function(response) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Başarılı',
+                        text: 'Envanter başarıyla güncellendi.'
+                    }).then(() => {
+                        location.reload();
+                    });
+                },
+                error: function(response) {
+                    let message = 'Güncelleme sırasında bir hata oluştu. Lütfen tekrar deneyin.';
+                    const error_response = JSON.parse(response.responseText);
+                    if (error_response.non_field_errors) {
+                        message = error_response.non_field_errors[0];
+                    }
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Hata!',
+                        text: message
+                    });
+                }
+            });
+        });
+        
+    });
+</script>
+
+
+{% endblock %}
